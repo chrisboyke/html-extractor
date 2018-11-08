@@ -108,9 +108,11 @@ def save_resource(url):
     # Some image servers put crap at the end of the URL which breaks our algorithm, so just strip that out
     urlfix=config['source'].get('urlfix')
     if urlfix:
-        logger.debug('URLFIX - before ' + url)
-        url = url.replace(urlfix,'')
-        logger.debug('URLFIX - after ' + url)
+        for u in urlfix.split(','):
+            if u in url:
+                logger.debug('URLFIX - before ' + url)
+                url = url.replace(u,'_')
+                logger.debug('URLFIX - after ' + url)
 
     # get filename and extension of resource
     file_name = urllib.parse.urlsplit(url).path.split('/')[-1]
@@ -297,7 +299,8 @@ def main():
         for expr in [ r'filename:"(.*?)"',
                       r'xlink:href="(.*?)"',
                       r'src=\\"(.*?)\\"',
-                      r'(/assets/.*?\.js)' ]:
+                      r'(/assets/.*?\.js)',
+                      r'data-bg-.*?="(.*?)"' ]:
             matches = re.finditer(expr,raw_html)
             if matches:
                 for m in matches:
