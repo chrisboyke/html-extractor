@@ -402,7 +402,7 @@ def main():
 
         # save ftl/html
         html_file_contents = html.tostring(root).decode('utf-8')
-        file_name = os.path.join(config.get('dest','site_dir'),config.get('dest','template'))
+        filename = os.path.join(config.get('dest','site_dir'),config.get('dest','template'))
         if not config.get('dest','type') == 'html':
             # add webfiles import tag for importing tag libraries
             html_file_contents = config.get('ftl','import_tag') + '\n'+ html_file_contents
@@ -412,11 +412,12 @@ def main():
         html_file_contents = html_file_contents.replace(WEBFILES_END_TAG_SEARCHREPLACE, WEBFILES_END_TAG)
 
         # save to file
-        print('Writing',file_name)
-        with open(file_name, 'w') as f:
+        print('Writing',filename)
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        with open(filename, 'w') as f:
             f.write(html_file_contents)
-        print("Downloaded resources from {} successfully".format(url))
-
+        print("COMPLETED\nDownloaded from",url,"\nto",filename)
+        
 
 if __name__ == '__main__':
     main()
