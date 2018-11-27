@@ -3,6 +3,16 @@
 # Python3 version of html-extractor
 #
 #
+'''
+Sample .INI file:
+
+[source]
+url=
+include=
+nodownload=
+
+
+'''
 from lxml import html
 from argparse import ArgumentParser
 
@@ -60,6 +70,9 @@ def download_resource(url,write_mode='w'):
         if write_mode=='wb':
             return r.content
 
+        if r.encoding != r.apparent_encoding:
+            r.encoding=r.apparent_encoding
+        
         return r.text
     except requests.exceptions.HTTPError as e:
         logger.warning("HTTP Error for URL: %s, %s", url, e)
