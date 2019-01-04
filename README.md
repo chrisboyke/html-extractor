@@ -15,12 +15,10 @@ correctly from Hippo (missing extension in filename, for example)
 
 ### Requirements
 
-Requires https://github.com/chrisboyke/config_util
+Install requirements via:
 
-Also, install standard requirements via:
-
-pip3 install -r requirements.txt
+`pip3 install -r requirements.txt`
 
 ## Usage
-extract.py <ini_file>
+`extract.py <ini_file>`
 
