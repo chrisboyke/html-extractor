@@ -11,6 +11,18 @@ url=
 include=
 nodownload=
 
+[dest]
+site_dir=/opt/hippo/basedemo/repository-data/webfiles/src/main/resources/site
+folders=css,fonts,icons,images,js,videos,other
+type=ftl
+
+template=freemarker/basedemo/base-layout.ftl
+
+[ftl]
+import_tag=<#include "../include/imports.ftl">
+
+[logging]
+level=debug
 
 '''
 from lxml import html
@@ -70,8 +82,9 @@ def download_resource(url,write_mode='w'):
         if write_mode=='wb':
             return r.content
 
-        if r.encoding != r.apparent_encoding:
-            r.encoding=r.apparent_encoding
+        apparent = r.apparent_encoding
+        if r.encoding != apparent:
+            r.encoding=apparent
         
         return r.text
     except requests.exceptions.HTTPError as e:
@@ -219,7 +232,7 @@ def save_resources_from_css(css_url,stylesheet_string, external):
                     # Resource paths are almost always relative to css location
                     print('Relative URL',sanitized_url)
                     css_dir = css_url.rsplit('/',1)[0] + '/'
-                    print('css_dir',css_dir)
+                    logger.debug('css_url: '+ css_url+', css_dir: '+css_dir)
                     sanitized_url = urllib.parse.urljoin(css_dir,sanitized_url)
                     print('New url:',sanitized_url)
 
