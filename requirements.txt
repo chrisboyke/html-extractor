@@ -1,3 +1,4 @@
 lxml
 requests
 configparser
+-e git://github.com/chrisboyke/config_util.git#egg=config_util
