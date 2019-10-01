@@ -12,7 +12,7 @@ include=
 nodownload=
 
 [dest]
-site_dir=/opt/hippo/basedemo/repository-data/webfiles/src/main/resources/site
+site_dir=/~/brxm/basedemo/repository-data/webfiles/src/main/resources/site
 folders=css,fonts,icons,images,js,videos,other
 type=ftl
 
@@ -71,7 +71,7 @@ def add_webfiles_tags_to_resource_path(resource_path):
 # create folders for storing all web resources, categorized by type (CSS, fonts, etc.)
 def create_folders():
     for folder in config.get('dest','folders').split(','):
-        os.makedirs(os.path.join(config.get('dest','site_dir'),folder), exist_ok=True)
+        os.makedirs(os.path.join(config.get_filename('dest','site_dir'),folder), exist_ok=True)
 
 # download resource for URL, raise error if 404 or other error is returned
 def download_resource(url,write_mode='w'):
@@ -112,10 +112,11 @@ def save_resource(url):
         if not found:
             return None
 
-    nodownload=config['source'].get('nodownload',None)
+    nodownload=config.get_list('source','nodownload')
     if nodownload:
-        for n in nodownload.split(','):
+        for n in nodownload:
             if n in url:
+                logger.info("Skipping download "+url)
                 return None
 
     origin_url=config.get('source','url')
@@ -156,7 +157,7 @@ def save_resource(url):
     logger.debug('Resource Path %s',resource_path)
 
     # add save_folder to resource path to determine path for saving the resource
-    save_folder = config.get('dest','site_dir')
+    save_folder = config.get_filename('dest','site_dir')
     save_path = "%s/%s" % (save_folder, resource_path)
 
     write_mode = select_folder(ext)[1]
@@ -215,6 +216,8 @@ def next_filename(filename):
 # search CSS stylesheet (string) for web resources and download them
 def save_resources_from_css(css_url,stylesheet_string, external):
     # check if a style element does not contain text so no exception is raised
+
+
     if stylesheet_string:
         matches = re.finditer(r'url\((.*?)\)',stylesheet_string)
         if matches:
@@ -264,12 +267,12 @@ def select_folder(ext):
         'jpeg': ('images', 'wb'),
         'jpg': ('images', 'wb'),
         'png': ('images', 'wb'),
+        'svg': ('images', 'w'),
 
         # icons
         'ico': ('icons', 'wb'),
         # fonts
         'eot': ('fonts', 'wb'),
-        'svg': ('fonts', 'w'),
         'otf': ('fonts', 'wb'),
         'ttf': ('fonts', 'wb'),
         'woff': ('fonts', 'wb'),
@@ -297,154 +300,154 @@ def main():
     elif config.get('logging','level') == "info":
         logging.getLogger().setLevel(logging.INFO)
 
+
+    # prepare folders
+    create_folders()
+
     url = config.get('source','url')
 
-    html_filename = config['source'].get('html')
-    if not html_filename:
-        # download resource from URL and parse HTML
-        raw_html = download_resource(config.get('source','url'))
-
+    html_filename = config.get_filename('source','html')
+    if html_filename:
+        root=html.parse(html_filename)
     else:
-        if os.path.isfile(html_filename):
-            with open(html_filename, 'r') as f:
-                raw_html = f.read()
-        else:
-            logger.error("Could not read HTML file: %s", html_filename)
-            sys.exit(1)
+        # download resource from URL and parse HTML
+        raw_html = download_resource(url)
+        root=html.fromstring(raw_html)
 
-    if raw_html:
-        # prepare folders
-        create_folders()
 
-        # Clean up trask
-        raw_html = raw_html.replace('#{{', '{{')
+    # find all web resources in link tags that are not a stylesheet
+    for elm in root.xpath("//link[@rel!='stylesheet' and @type!='text/css' and @href]"):
+        if elm.get('href'):
+            # save resource
+            resource_path = save_resource(elm.get('href'))
+            if resource_path:
+                # set new path to web resource
+                resource_path = add_webfiles_tags_to_resource_path(resource_path)
+                elm.set('href', resource_path)
 
-        # find all resources in javascript
+    # find all external stylesheets
+    # xpath expression returns directly the value of href
+    for elm in root.xpath("//link[@rel='stylesheet' and @href or @type='text/css' and @href]"):
+        if elm.get('href'):
+            href = elm.get('href')
+            # save resource
+            resource_path = save_resource(href)
+            if resource_path:
 
-        logger.info('FILENAMES')
+                # set new path to web resource
+                resource_path = add_webfiles_tags_to_resource_path(resource_path)
+                elm.set('href', resource_path)
 
-        for expr in [ r'filename:"(.*?)"',
-                      r'xlink:href="(.*?)"',
-                      r'src=\\"(.*?)\\"',
-                      r'(/assets/.*?\.js)',
-                      r'data-bg-.*?="(.*?)"' ]:
-            matches = re.finditer(expr,raw_html)
-            if matches:
-                for m in matches:
-                    f = m.group(1)
-                    logger.info('Found %s in %s',f,m.group(0))
+    # find all web resources from elements with src attribute (<script> and <img> elements)
+    # xpath expression returns directly the value of src
+    for elm in root.xpath('//*[@src]'):
+        if elm.get('src') and not elm.get('src').startswith('data:'):
+            # save resource
+            resource_path = save_resource(elm.get('src'))
+            if resource_path:
 
-                    # save resource
-                    resource_path = save_resource(f)
-                    if resource_path:
-                        # set new path to web resource
-                        resource_path = add_webfiles_tags_to_resource_path(resource_path)
-                        print(resource_path)
-                        raw_html = raw_html.replace(f,resource_path)
+                # set new path to web resource
+                resource_path = add_webfiles_tags_to_resource_path(resource_path)
+                elm.set('src', resource_path)
 
-        root = html.fromstring(raw_html)
+    # find all web resources from elements with srcset attribute (html5)
+    for elm in root.xpath('//*[@srcset]'):
+        images = elm.get('srcset')
+        new_images = []
+        for i in re.split(r'\s*,\s*',images):
+            fields = re.split(r'\s+',i,1)
+            img = fields[0]
+            size=''
+            if len(fields) == 2:
+                size = fields[1]
+            # save resource
+            resource_path = save_resource(img)
+            if resource_path:
+                # set new path to web resource
+                resource_path = add_webfiles_tags_to_resource_path(resource_path)
+                new_images.append(resource_path+' '+size)
+            else:
+                # Keep as is
+                new_images.append(img+' '+size)
+        elm.set('srcset', ',\n'.join(new_images))
 
-        # find all web resources in link tags that are not a stylesheet
-        for elm in root.xpath("//link[@rel!='stylesheet' and @type!='text/css' and @href]"):
-            if elm.get('href'):
+
+    # find all web resources from elements with data-src attribute (HTML5)
+    # xpath expression returns directly the value of data-src
+    for elm in root.xpath('//*[@data-src]'):
+        if elm.get('data-src'):
+            # save resource
+            resource_path = save_resource(elm.get('data-src'))
+            if resource_path:
+                # set new path to web resource
+                resource_path = add_webfiles_tags_to_resource_path(resource_path)
+                elm.set('data-src', resource_path)
+
+    # find web resources in inline stylesheets
+    for elm in root.xpath('//style'):
+        new_css = save_resources_from_css(config.get('source','url'),elm.text, False)
+        if new_css:
+            # set new text for element, with updated URLs
+            elm.text = new_css
+
+    # find web resources in inline styles
+    # xpath expression returns directly the value of style
+    for elm in root.xpath('//*[@style]'):
+        new_css = save_resources_from_css(config.get('source','url'),elm.get('style'), False)
+        if new_css:
+            # set style with new path
+            elm.set('style', new_css)
+
+    html_contents = html.tostring(root).decode('utf-8')
+
+    html_contents = process_additional_text(html_contents)
+
+    filename = os.path.join(config.get_filename('dest','site_dir'),config.get('dest','template'))
+    if not config.get('dest','type') == 'html':
+        # add webfiles import tag for importing tag libraries
+        html_contents = config.get('ftl','import_tag') + '\n'+ html_contents
+
+    # replace placeholders for webfiles tags
+    html_contents = html_contents.replace(WEBFILES_START_TAG_SEARCHREPLACE, WEBFILES_START_TAG)
+    html_contents = html_contents.replace(WEBFILES_END_TAG_SEARCHREPLACE, WEBFILES_END_TAG)
+
+    # save to file
+    print('Writing',filename)
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    with open(filename, 'w') as f:
+        f.write(html_contents)
+    print("COMPLETED\nDownloaded from",url,"\nto",filename)
+
+
+def process_additional_text(html_contents):
+    # find all resources in javascript
+
+    logger.info('FILENAMES')
+
+    for expr in [ r'filename:"(.*?)"',
+                    r'xlink:href="(.*?)"',
+                    r'src=\\"(.*?)\\"',
+                    r'(/assets/.*?\.js)',
+                    r'data-bg-.*?="(.*?)"',
+                    r'data-\w+-src="(.*?)"',
+                    r'data-img-url="(.*?)"'
+                    ]:
+        matches = re.finditer(expr,html_contents)
+        if matches:
+            for m in matches:
+                f = m.group(1)
+                logger.info('Found %s in %s',f,m.group(0))
+
                 # save resource
-                resource_path = save_resource(elm.get('href'))
+                resource_path = save_resource(f)
                 if resource_path:
                     # set new path to web resource
                     resource_path = add_webfiles_tags_to_resource_path(resource_path)
-                    elm.set('href', resource_path)
+                    #print(resource_path)
+                    html_contents = html_contents.replace(f,resource_path)
 
-        # find all external stylesheets
-        # xpath expression returns directly the value of href
-        for elm in root.xpath("//link[@rel='stylesheet' and @href or @type='text/css' and @href]"):
-            if elm.get('href'):
-                href = elm.get('href')
-                # save resource
-                resource_path = save_resource(href)
-                if resource_path:
-
-                    # set new path to web resource
-                    resource_path = add_webfiles_tags_to_resource_path(resource_path)
-                    elm.set('href', resource_path)
-
-        # find all web resources from elements with src attribute (<script> and <img> elements)
-        # xpath expression returns directly the value of src
-        for elm in root.xpath('//*[@src]'):
-            if elm.get('src') and not elm.get('src').startswith('data:'):
-                # save resource
-                resource_path = save_resource(elm.get('src'))
-                if resource_path:
-
-                    # set new path to web resource
-                    resource_path = add_webfiles_tags_to_resource_path(resource_path)
-                    elm.set('src', resource_path)
-
-        # find all web resources from elements with srcset attribute (html5)
-        for elm in root.xpath('//*[@srcset]'):
-            images = elm.get('srcset')
-            new_images = []
-            for i in re.split(r'\s*,\s*',images):
-                fields = re.split(r'\s+',i,1)
-                img = fields[0]
-                size=''
-                if len(fields) == 2:
-                    size = fields[1]
-                # save resource
-                resource_path = save_resource(img)
-                if resource_path:
-                    # set new path to web resource
-                    resource_path = add_webfiles_tags_to_resource_path(resource_path)
-                    new_images.append(resource_path+' '+size)
-                else:
-                    # Keep as is
-                    new_images.append(img+' '+size)
-            elm.set('srcset', ',\n'.join(new_images))
-
-
-        # find all web resources from elements with data-src attribute (HTML5)
-        # xpath expression returns directly the value of data-src
-        for elm in root.xpath('//*[@data-src]'):
-            if elm.get('data-src'):
-                # save resource
-                resource_path = save_resource(elm.get('data-src'))
-                if resource_path:
-                    # set new path to web resource
-                    resource_path = add_webfiles_tags_to_resource_path(resource_path)
-                    elm.set('data-src', resource_path)
-
-        # find web resources in inline stylesheets
-        for elm in root.xpath('//style'):
-            new_css = save_resources_from_css(config.get('source','url'),elm.text, False)
-            if new_css:
-                # set new text for element, with updated URLs
-                elm.text = new_css
-
-        # find web resources in inline styles
-        # xpath expression returns directly the value of style
-        for elm in root.xpath('//*[@style]'):
-            new_css = save_resources_from_css(config.get('source','url'),elm.get('style'), False)
-            if new_css:
-                # set style with new path
-                elm.set('style', new_css)
-
-        # save ftl/html
-        html_file_contents = html.tostring(root).decode('utf-8')
-        filename = os.path.join(config.get('dest','site_dir'),config.get('dest','template'))
-        if not config.get('dest','type') == 'html':
-            # add webfiles import tag for importing tag libraries
-            html_file_contents = config.get('ftl','import_tag') + '\n'+ html_file_contents
-
-        # replace placeholders for webfiles tags
-        html_file_contents = html_file_contents.replace(WEBFILES_START_TAG_SEARCHREPLACE, WEBFILES_START_TAG)
-        html_file_contents = html_file_contents.replace(WEBFILES_END_TAG_SEARCHREPLACE, WEBFILES_END_TAG)
-
-        # save to file
-        print('Writing',filename)
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        with open(filename, 'w') as f:
-            f.write(html_file_contents)
-        print("COMPLETED\nDownloaded from",url,"\nto",filename)
-        
+    return html_contents
+       
 
 if __name__ == '__main__':
     main()
